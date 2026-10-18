@@ -205,7 +205,9 @@ async function runSetupItem(item, hw) {
     case 'chat':
     case 'coder':
       return tasks.runTask('install', `Downloading ${item.id}`, async (t) => {
-        await ollama.pullModel(item.id, t);
+        const have = (await ollama.listModels()).map((m) => m.id.replace(/:latest$/, ''));
+        if (have.includes(item.id.replace(/:latest$/, ''))) tasks.updateTask(t.id, { detail: `${item.id} is already on this PC.` });
+        else await ollama.pullModel(item.id, t);
         if (item.kind === 'chat' && (!s.chatModel || item.makeDefault)) store.setSettings({ chatModel: item.id });
         if (item.kind === 'coder' && (!s.coderModel || item.makeDefault)) store.setSettings({ coderModel: item.id });
       });
@@ -274,6 +276,28 @@ async function runToolForChat(name, args) {
   return { text: `Unknown tool ${name}` };
 }
 
+// If the user already has Ollama models, use them instead of asking to download new ones.
+async function adoptExistingModels() {
+  const s = store.getSettings();
+  const have = (await ollama.listModels()).map((m) => m.id);
+  if (!have.length) return;
+  const base = (id) => id.replace(/:latest$/, '');
+  const cat = catalog.getCatalog(await hardware());
+  const isCoder = (id) => /coder|code|deepseek-coder|starcoder|devstral/i.test(id);
+  const stillThere = (id) => id && have.some((h) => base(h) === base(id));
+  const patch = {};
+  if (!stillThere(s.chatModel)) {
+    const preferred = [cat.recommended && cat.recommended.chat && cat.recommended.chat.id, ...cat.chat.filter((m) => m.fits).map((m) => m.id).reverse()];
+    const pick = preferred.map((id) => id && have.find((h) => base(h) === base(id))).find(Boolean) || have.find((h) => !isCoder(h) && !/embed/i.test(h));
+    if (pick) patch.chatModel = pick;
+  }
+  if (!stillThere(s.coderModel)) {
+    const pick = cat.coder.map((m) => have.find((h) => base(h) === base(m.id))).find(Boolean) || have.find(isCoder);
+    if (pick) patch.coderModel = pick;
+  }
+  if (Object.keys(patch).length) store.setSettings(patch);
+}
+
 // ---------- IPC ----------
 function handle(channel, fn) {
   ipcMain.handle(channel, async (_e, ...args) => fn(...args));
@@ -282,7 +306,12 @@ function handle(channel, fn) {
 function registerIpc() {
   handle('app:info', async () => ({ version: app.getVersion(), isDev, platform: process.platform }));
   handle('hw:get', (refresh) => hardware(!!refresh));
-  handle('settings:get', () => store.getSettings());
+  handle('settings:get', async () => {
+    try {
+      if (await engines.ollamaRunning()) await adoptExistingModels();
+    } catch {}
+    return store.getSettings();
+  });
   handle('settings:set', (patch) => {
     const allowed = ['userName', 'setupDone', 'chatModel', 'coderModel', 'imageModel', 'videoModel', 'showThinking', 'agentTools', 'theme', 'storageRoot'];
     const clean = Object.fromEntries(Object.entries(patch || {}).filter(([k]) => allowed.includes(k)));
@@ -475,8 +504,12 @@ app.whenReady().then(async () => {
   registerIpc();
   createWindow();
   setupAutoUpdater();
-  // Wake the chat engine in the background so the first message is quick.
-  engines.startOllama().catch(() => {});
+  // Wake the chat engine in the background so the first message is quick,
+  // then adopt models that are already on this PC.
+  engines
+    .startOllama()
+    .then((ok) => ok && adoptExistingModels())
+    .catch(() => {});
   hardware().catch(() => {});
 });
 

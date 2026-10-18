@@ -25,13 +25,34 @@ async function ollamaRunning() {
   }
 }
 
+// An Ollama the user installed themselves (the normal Windows installer, or anything on PATH).
+function systemOllamaExe() {
+  const candidates = [];
+  if (process.env.LOCALAPPDATA) candidates.push(path.join(process.env.LOCALAPPDATA, 'Programs', 'Ollama', 'ollama.exe'));
+  if (process.env.ProgramFiles) candidates.push(path.join(process.env.ProgramFiles, 'Ollama', 'ollama.exe'));
+  for (const dir of String(process.env.PATH || '').split(path.delimiter)) {
+    if (dir) candidates.push(path.join(dir, 'ollama.exe'));
+  }
+  return candidates.find((p) => {
+    try {
+      return fs.statSync(p).isFile();
+    } catch {
+      return false;
+    }
+  }) || null;
+}
+
+// Prefer the user's own Ollama; fall back to the copy Dilreet downloaded.
 function ollamaExe() {
-  return findFile(dirs().ollama, 'ollama.exe');
+  return systemOllamaExe() || findFile(dirs().ollama, 'ollama.exe');
 }
 
 async function installOllama(task, hw) {
   const d = dirs();
-  if (ollamaExe()) return;
+  if (ollamaExe() || (await ollamaRunning())) {
+    updateTask(task.id, { detail: 'Using the Ollama already on this PC.' });
+    return;
+  }
   updateTask(task.id, { detail: 'Finding the latest Ollama release…' });
   const wantAmd = hw && hw.gpu && hw.gpu.vendor === 'amd';
   const patterns = [/^ollama-windows-amd64\.zip$/];
@@ -52,11 +73,11 @@ async function startOllama() {
   if (await ollamaRunning()) return true;
   const exe = ollamaExe();
   if (!exe) return false;
-  const d = dirs();
   ollamaProc = spawn(exe, ['serve'], {
     cwd: path.dirname(exe),
     windowsHide: true,
-    env: { ...process.env, OLLAMA_HOST: '127.0.0.1:11434', OLLAMA_MODELS: d.ollamaModels, OLLAMA_KEEP_ALIVE: '10m' },
+    // Ollama's own model folder is kept (no OLLAMA_MODELS override), so models you already downloaded show up.
+    env: { ...process.env, OLLAMA_HOST: '127.0.0.1:11434', OLLAMA_KEEP_ALIVE: process.env.OLLAMA_KEEP_ALIVE || '10m' },
     stdio: 'ignore'
   });
   ollamaProc.on('exit', () => (ollamaProc = null));
@@ -165,6 +186,7 @@ async function engineStatus() {
   return {
     ollamaInstalled: !!ollamaExe() || (await ollamaRunning()),
     ollamaRunning: await ollamaRunning(),
+    ollamaSystem: !!systemOllamaExe(),
     sdInstalled: !!sdExe(),
     ffmpegInstalled: !!ffmpegExe()
   };

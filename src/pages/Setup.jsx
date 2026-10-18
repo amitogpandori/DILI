@@ -19,8 +19,11 @@ export default function Setup({ hw, settings, tasks, onRescan, onSettings, onDon
   const [startedAt, setStartedAt] = useState(null);
   const [finished, setFinished] = useState(null);
 
+  const [have, setHave] = useState([]);
+
   useEffect(() => {
     api.catalog().then(setCatalog);
+    api.models.installed().then((r) => setHave((r.chat || []).map((m) => m.id.replace(/:latest$/, ''))));
     return api.setup.onFinished((r) => setFinished(r));
   }, [hw]);
 
@@ -40,8 +43,11 @@ export default function Setup({ hw, settings, tasks, onRescan, onSettings, onDon
       { key: 'image', title: 'Pictures', model: rec.image, sizeGB: rec.image && rec.image.files.reduce((s, f) => s + f.sizeGB, 0) + 0.6, note: 'Turn a sentence into a picture. Includes the picture engine.' },
       { key: 'video', title: 'Videos', model: rec.video, sizeGB: rec.video && rec.video.files.reduce((s, f) => s + f.sizeGB, 0) + 0.2, note: rec.videoExperimental ? 'Short, small clips. On this PC video is experimental: slow, and it may run out of memory.' : 'Short clips from a sentence. Includes the video tools.', warn: rec.videoExperimental }
     ];
-    return list.filter((i) => i.model);
-  }, [rec]);
+    // Models already downloaded with Ollama cost nothing extra.
+    return list
+      .filter((i) => i.model)
+      .map((i) => ((i.key === 'chat' || i.key === 'coder') && have.includes(i.model.id) ? { ...i, sizeGB: 0, already: true, note: `Already on your PC. ${i.note}` } : i));
+  }, [rec, have]);
 
   const totalGB = items.filter((i) => picks[i.key]).reduce((s, i) => s + (i.sizeGB || 0), 0);
   const diskOk = hw.diskFreeGB == null || hw.diskFreeGB > totalGB + 5;
@@ -145,7 +151,7 @@ export default function Setup({ hw, settings, tasks, onRescan, onSettings, onDon
                     </div>
                     <div className="pick-note">{i.note}</div>
                   </div>
-                  <div className="pick-size">{i.sizeGB ? `${i.sizeGB.toFixed(1)} GB` : ''}</div>
+                  <div className="pick-size">{i.already ? 'Installed' : i.sizeGB ? `${i.sizeGB.toFixed(1)} GB` : ''}</div>
                 </label>
               ))}
             </div>
@@ -156,7 +162,7 @@ export default function Setup({ hw, settings, tasks, onRescan, onSettings, onDon
             </div>
 
             <div className="row gap">
-              <button className="btn primary big" onClick={install} disabled={!totalGB || !diskOk}>
+              <button className="btn primary big" onClick={install} disabled={!items.some((i) => picks[i.key]) || !diskOk}>
                 <Icon name="download" /> Install everything
               </button>
               <button className="btn ghost" onClick={() => setStep('scan')}>

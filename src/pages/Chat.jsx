@@ -28,7 +28,12 @@ export default function Chat({ conversation, settings, hw, tasks, onSave, onOpen
   convRef.current = conv;
 
   useEffect(() => {
-    api.models.installed().then((r) => setModels(r.chat || []));
+    api.models.installed().then((r) => {
+      const list = r.chat || [];
+      setModels(list);
+      // No default chosen yet but models exist on this PC → use one instead of saying "none installed".
+      setModel((cur) => cur || (list.find((m) => !/coder|embed/i.test(m.id)) || list[0] || {}).id || '');
+    });
   }, []);
 
   // Stream events for the reply currently being written.

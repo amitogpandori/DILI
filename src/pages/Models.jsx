@@ -45,6 +45,7 @@ export default function Models({ settings, hw, tasks, onSettings, onRescan, toas
         }}
         onUse={() => onSettings({ [key]: m.id })}
         onRemove={async () => {
+          if (!window.confirm(`Delete ${m.id} from this PC? Other apps that use Ollama will lose it too.`)) return;
           await api.models.deleteChat(m.id);
           if (settings[key] === m.id) onSettings({ [key]: '' });
           load();
