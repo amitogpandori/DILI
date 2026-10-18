@@ -493,9 +493,13 @@ function setupAutoUpdater() {
   try {
     const { autoUpdater } = require('electron-updater');
     autoUpdater.autoDownload = true;
+    autoUpdater.autoInstallOnAppQuit = true; // if you ignore the button, the update installs next time you close Dilreet
+    autoUpdater.on('update-available', (info) => send('app:toast', { text: `Downloading Dilreet ${info.version} in the background…` }));
     autoUpdater.on('update-downloaded', (info) => send('update:ready', { version: info.version }));
     autoUpdater.on('error', () => {});
-    setTimeout(() => autoUpdater.checkForUpdates().catch(() => {}), 15000);
+    const check = () => autoUpdater.checkForUpdates().catch(() => {});
+    setTimeout(check, 15000); // shortly after start
+    setInterval(check, 60 * 60 * 1000); // and every hour while open
   } catch {}
 }
 

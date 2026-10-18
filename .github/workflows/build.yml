@@ -1,6 +1,7 @@
 # Builds the Dilreet Windows installer (.exe).
-#  • Every push → the installer is attached to the run (Actions tab → open the run → Artifacts).
-#  • Pushing a tag like v1.0.1 → a GitHub Release is published and installed copies update themselves.
+#  • Every push to main → a new version (1.0.<build number>) is built and published as a GitHub Release.
+#    Installed copies of Dilreet find it, download it in the background and offer "Restart to update".
+#  • Pushes to other branches only build a test installer (Actions tab → open the run → Artifacts).
 #  • You can also start it by hand: Actions tab → "Build Dilreet for Windows" → Run workflow.
 name: Build Dilreet for Windows
 
@@ -40,23 +41,25 @@ jobs:
         working-directory: ${{ env.APP_DIR }}
         run: npm pkg set repository.url="https://github.com/${{ github.repository }}.git"
 
-      - name: Use the tag as the version
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Set the version number
         shell: bash
         working-directory: ${{ env.APP_DIR }}
-        run: npm pkg set version="${GITHUB_REF_NAME#v}"
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then v="${GITHUB_REF_NAME#v}"; else v="1.0.${{ github.run_number }}"; fi
+          npm pkg set version="$v"
+          echo "Building Dilreet $v"
 
       - name: Install
         working-directory: ${{ env.APP_DIR }}
         run: npm install --no-audit --no-fund
 
-      - name: Build installer
-        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+      - name: Build test installer
+        if: ${{ github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/v') }}
         working-directory: ${{ env.APP_DIR }}
         run: npm run dist
 
       - name: Build and publish release
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: ${{ github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v') }}
         working-directory: ${{ env.APP_DIR }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

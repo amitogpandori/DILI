@@ -38,12 +38,13 @@ Add-ons run in a locked frame. They can't read your files or reach the internet.
 - save their own data
 - show a message in the app
 
-**Core updates (new versions of the app).** Change the code in your repository and push a version tag:
-```
-git tag v1.0.1
-git push origin v1.0.1
-```
-GitHub builds a release. Installed copies of Dilreet download it automatically and show a "Restart to update" button. You can also check from **Settings → Check for updates**.
+**Core updates (new versions of the app).** Push any change to the `main` branch. GitHub then builds version `1.0.<build number>` and publishes it as a Release. Installed copies of Dilreet:
+
+- check for a new version when they start and every hour after that
+- download it in the background
+- show a **Restart to update** button
+
+If you ignore the button, the update installs the next time you close Dilreet. You can also check by hand in **Settings → Check for updates**. Running a newer installer by hand also updates in place: your chats, settings, models and creations are kept.
 
 ## What runs on which PC
 
