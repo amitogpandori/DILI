@@ -53,17 +53,24 @@ jobs:
         working-directory: ${{ env.APP_DIR }}
         run: npm install --no-audit --no-fund
 
-      - name: Build test installer
-        if: ${{ github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/v') }}
+      - name: Build installer
         working-directory: ${{ env.APP_DIR }}
         run: npm run dist
 
-      - name: Build and publish release
+      # Upload with GitHub's own CLI: reliable for the ~100 MB installer.
+      # latest.yml is what installed copies of Dilreet read to find updates.
+      - name: Publish release
         if: ${{ github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v') }}
+        shell: bash
         working-directory: ${{ env.APP_DIR }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npm run release
+        run: |
+          v=$(node -p "require('./package.json').version")
+          ls -la release
+          gh release create "v$v" release/*.exe release/*.blockmap release/latest.yml \
+            -R "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "Dilreet $v" --notes "$(git log -1 --pretty=%B)"
 
       - name: Upload installer
         uses: actions/upload-artifact@v4
