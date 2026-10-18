@@ -1,0 +1,70 @@
+# Builds the Dilreet Windows installer (.exe).
+#  • Every push → the installer is attached to the run (Actions tab → open the run → Artifacts).
+#  • Pushing a tag like v1.0.1 → a GitHub Release is published and installed copies update themselves.
+#  • You can also start it by hand: Actions tab → "Build Dilreet for Windows" → Run workflow.
+name: Build Dilreet for Windows
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # Works whether the files are at the top of the repository or inside a "dilreet" folder.
+      - name: Find the app folder
+        shell: bash
+        run: |
+          if [ -f package.json ]; then
+            dir=.
+          else
+            found=$(find . -maxdepth 3 -name package.json -not -path '*/node_modules/*' | head -1)
+            if [ -z "$found" ]; then echo "package.json not found — upload all Dilreet files to this repository."; exit 1; fi
+            dir=$(dirname "$found")
+          fi
+          echo "Using app folder: $dir"
+          echo "APP_DIR=$dir" >> "$GITHUB_ENV"
+
+      - name: Point auto-updates at this repository
+        shell: bash
+        working-directory: ${{ env.APP_DIR }}
+        run: npm pkg set repository.url="https://github.com/${{ github.repository }}.git"
+
+      - name: Use the tag as the version
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        working-directory: ${{ env.APP_DIR }}
+        run: npm pkg set version="${GITHUB_REF_NAME#v}"
+
+      - name: Install
+        working-directory: ${{ env.APP_DIR }}
+        run: npm install --no-audit --no-fund
+
+      - name: Build installer
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        working-directory: ${{ env.APP_DIR }}
+        run: npm run dist
+
+      - name: Build and publish release
+        if: startsWith(github.ref, 'refs/tags/v')
+        working-directory: ${{ env.APP_DIR }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm run release
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Dilreet-Setup
+          path: ${{ env.APP_DIR }}/release/*.exe
+          if-no-files-found: error
